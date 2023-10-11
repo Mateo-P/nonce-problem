@@ -71,13 +71,7 @@ const Document = withEmotionCache(({ children, title, nonce }: DocumentProps, em
 });
 
 export const loader: LoaderFunction = async () => {
-  const crypto = require('crypto');
 
-  function cryptoGetRandomString(length:number) {
-    return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
-  }
-  
-  const cspScriptNonce = cryptoGetRandomString(33);
   return {cspScriptNonce};
 };
 
@@ -146,3 +140,11 @@ export function CatchBoundary() {
     </Document>
   );
 }
+
+const crypto = require('crypto');
+
+export const cryptoGetRandomString = (length:number) => {
+  return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
+}
+
+const cspScriptNonce = cryptoGetRandomString(33);

@@ -1,0 +1,19 @@
+html {
+  font-size: 62.5%;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+
+body {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.visx-axis-tick > svg {
+  overflow: visible !important;
+}

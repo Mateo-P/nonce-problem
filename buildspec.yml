@@ -1,0 +1,20 @@
+version: 0.2
+phases:
+  pre_build:
+    commands:
+      - RESOLVED_SOURCE_VERSION=$(cat CODEBUILD_RESOLVED_SOURCE_VERSION.txt)
+      - IMAGE_NAME=$ENVIRONMENT-$RESOLVED_SOURCE_VERSION-$CODEBUILD_BUILD_NUMBER
+      - IMAGE_URI=$ECR_URL:$IMAGE_NAME
+      - BUILD_SOURCE_VERSION=$(cat CODEBUILD_SOURCE_VERSION.txt)
+      - BUILD_INITIATOR=$(cat CODEBUILD_INITIATOR.txt)
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+  build:
+    commands:
+      - docker build -t $ECR_URL:$IMAGE_NAME -t $ECR_URL:latest-$ENVIRONMENT .
+  post_build:
+    commands:
+      - docker push -a $ECR_URL
+      - printf '[{"name":"%s","imageUri":"%s"}]' "${CONTAINER_NAME}" "$IMAGE_URI" > imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json

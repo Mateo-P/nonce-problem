@@ -1,4 +1,17 @@
-import * as React from 'react';
+import '@fontsource-variable/lexend/wght.css';
+import '@fontsource/poppins/latin-400.css';
+import '@fontsource/poppins/latin-500.css';
+import '@fontsource/poppins/latin-600.css';
+import '@fontsource/poppins/latin-700.css';
+import { withEmotionCache } from '@emotion/react';
+import { unstable_useEnhancedEffect as useEnhancedEffect } from '@mui/material/utils';
+import { cssBundleHref } from '@remix-run/css-bundle';
+import { json } from '@remix-run/node';
+import type {
+  LinkDescriptor,
+  LinksFunction,
+  MetaFunction,
+} from '@remix-run/node';
 import {
   Links,
   LiveReload,
@@ -6,145 +19,125 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useCatch,
   useLoaderData,
 } from '@remix-run/react';
-import { withEmotionCache } from '@emotion/react';
-import { unstable_useEnhancedEffect as useEnhancedEffect } from '@mui/material';
-import theme from './src/theme';
-import ClientStyleContext from './src/ClientStyleContext';
-import Layout from './src/Layout';
-import { LoaderFunction } from '@remix-run/node';
-import { useEffect, useState } from 'react';
+import { useContext } from 'react';
+import PublicEnv from '@/components/PublicEnv';
+import type { BrowserEnvironment } from '@/constants/env.server';
+import globalStyles from '@/styles/globals.css';
+import ClientStyleContext from '@/styles/style-context.client';
+import { sheetCanInsertTag } from '@/styles/utils/sheetCanInsertTag';
+import { getBrowserEnvironment } from '@/utils/env';
+import { cspScriptNonce, now } from './utils/shared';
 
+export const links: LinksFunction = () => {
+  const baseLink = {
+    rel: 'stylesheet',
+    href: globalStyles,
+  } satisfies LinkDescriptor;
 
-interface DocumentProps {
+  if (typeof cssBundleHref === 'string') {
+    return [{ rel: 'stylesheet', href: cssBundleHref }, baseLink];
+  }
+
+  return [baseLink];
+};
+
+export const meta: MetaFunction = () => {
+  return [{ title: 'CCA Portal' }];
+};
+
+type DocumentProps = {
+  browserEnv: BrowserEnvironment;
+  nonce: string;
   children: React.ReactNode;
-  title?: string;
-  nonce?:string;
+};
+
+const Document = withEmotionCache<DocumentProps, unknown>(
+  (props, emotionCache) => {
+    const { browserEnv, nonce, children } = props;
+
+    const clientStyleContextData = useContext(ClientStyleContext);
+
+    useEnhancedEffect(() => {
+      emotionCache.sheet.container = document.head;
+
+      const styleTags = emotionCache.sheet.tags;
+
+      emotionCache.sheet.flush();
+
+      styleTags.forEach((styleTag) => {
+        styleTag.nonce = cspScriptNonce;
+        if (!sheetCanInsertTag(emotionCache.sheet)) return;
+
+        emotionCache.sheet._insertTag(styleTag);
+      });
+
+      clientStyleContextData?.reset();
+    }, []);
+
+    return (
+      <html lang="en">
+        <head>
+          {/* Global <meta /> tags ========================================= */}
+          <meta charSet="UTF-8" />
+          <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0"
+          />
+          {/* ============================================================== */}
+
+          <Meta />
+
+          <Links />
+
+          <PublicEnv {...browserEnv} />
+
+          <meta
+            name="emotion-insertion-point"
+            content="emotion-insertion-point"
+          />
+        </head>
+
+        <body>
+          {children}
+
+          <ScrollRestoration nonce={nonce} />
+          <Scripts nonce={nonce} />
+          <LiveReload nonce={nonce} />
+        </body>
+      </html>
+    );
+  },
+);
+
+if (process.env.NODE_ENV !== 'production') {
+  Document.displayName = 'Document';
 }
 
-const Document = withEmotionCache(({ children, title, nonce }: DocumentProps, emotionCache) => {
-  const clientStyleData = React.useContext(ClientStyleContext);
-
-  // Only executed on client
-  useEnhancedEffect(() => {
-    // re-link sheet container
-    emotionCache.sheet.container = document.head;
-    // re-inject tags
-    const tags = emotionCache.sheet.tags;
-    emotionCache.sheet.flush();
-    tags.forEach((tag) => {
-      // eslint-disable-next-line no-underscore-dangle
-      (emotionCache.sheet as any)._insertTag(tag);
-    });
-    // reset cache to reapply global styles
-    clientStyleData.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <html lang="en">
-      <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <meta name="theme-color" content={theme.palette.primary.main} />
-        {title ? <title>{title}</title> : null}
-        <Meta />
-        <Links />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap"
-        />
-        <meta name="emotion-insertion-point" content="emotion-insertion-point" />
-      </head>
-      <body>
-        {children}
-        <ScrollRestoration nonce={nonce}/>
-        <Scripts nonce={nonce} />
-        <LiveReload nonce={nonce} />
-      </body>
-    </html>
-  );
-});
-
-export const loader: LoaderFunction = async () => {
-
-  return {cspScriptNonce};
+export const loader = () => {
+  return json({
+    browserEnv: {
+      PUBLIC_MUI_DATA_GRID_LICENSE: getBrowserEnvironment(
+        'PUBLIC_MUI_DATA_GRID_LICENSE',
+      ),
+      PUBLIC_DATE: `${now}`,
+    },
+    cspScriptNonce,
+  });
 };
 
 export default function App() {
-  const { cspScriptNonce } = useLoaderData<typeof loader>();
-  const [nonce, setnonce] = useState(cspScriptNonce)
-  useEffect(() => {
-    if(typeof document !== "undefined") {
-      setnonce("");
-    }
-  }, [])
-  
-	
+  const loaderData = useLoaderData<typeof loader>();
+
   return (
-    <Document nonce={nonce}>
-      <Layout>
+    <Document
+      browserEnv={loaderData.browserEnv}
+      nonce={loaderData.cspScriptNonce}
+    >
+
         <Outlet />
-      </Layout>
+
     </Document>
   );
 }
-
-// https://remix.run/docs/en/v1/api/conventions#errorboundary
-export function ErrorBoundary({ error }: { error: Error }) {
-  console.error(error);
-
-  return (
-    <Document title="Error!">
-      <Layout>
-        <div>
-          <h1>There was an error</h1>
-          <p>{error.message}</p>
-          <hr />
-          <p>Hey, developer, you should replace this with what you want your users to see.</p>
-        </div>
-      </Layout>
-    </Document>
-  );
-}
-
-// https://remix.run/docs/en/v1/api/conventions#catchboundary
-export function CatchBoundary() {
-  const caught = useCatch();
-
-  let message;
-  switch (caught.status) {
-    case 401:
-      message = <p>Oops! Looks like you tried to visit a page that you do not have access to.</p>;
-      break;
-    case 404:
-      message = <p>Oops! Looks like you tried to visit a page that does not exist.</p>;
-      break;
-
-    default:
-      throw new Error(caught.data || caught.statusText);
-  }
-
-  return (
-    <Document title={`${caught.status} ${caught.statusText}`}>
-      <Layout>
-        <h1>
-          {caught.status}: {caught.statusText}
-        </h1>
-        {message}
-      </Layout>
-    </Document>
-  );
-}
-
-const crypto = require('crypto');
-
-export const cryptoGetRandomString = (length:number) => {
-  return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
-}
-
-const cspScriptNonce = cryptoGetRandomString(33);

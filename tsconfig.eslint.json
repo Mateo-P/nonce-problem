@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "allowJs": true
+  },
+  "extends": "./tsconfig.base.json",
+  "include": [
+    ".eslintrc.js",
+    ".lintstagedrc.js",
+    ".prettierrc.js",
+    "remix.config.js"
+  ]
+}

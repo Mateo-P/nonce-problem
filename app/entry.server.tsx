@@ -1,102 +1,128 @@
-import * as React from 'react';
-import * as ReactDOMServer from 'react-dom/server';
-import { RemixServer } from '@remix-run/react';
-import type { EntryContext } from '@remix-run/node';
-import createEmotionCache from './src/createEmotionCache';
-import theme from './src/theme';
-import CssBaseline from '@mui/material/CssBaseline';
-import { ThemeProvider } from '@mui/material/styles';
 import { CacheProvider } from '@emotion/react';
 import createEmotionServer from '@emotion/server/create-instance';
+import CssBaseline from '@mui/material/CssBaseline';
+import { ThemeProvider } from '@mui/material/styles';
+import type { EntryContext } from '@remix-run/node';
+import { RemixServer } from '@remix-run/react';
+import { renderToString } from 'react-dom/server';
+import { cors } from 'remix-utils/cors';
+import createEmotionCache from '@/styles/utils/createEmotionCache';
+import { GLOBAL_ENVIRONMENT } from './constants/env.server';
 
-export default function handleRequest(
+export default async function handleRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
   remixContext: EntryContext,
 ) {
   const cache = createEmotionCache();
+
+  /* eslint-disable-next-line @typescript-eslint/unbound-method --
+   * the `extractCriticalToChunks` function is typed
+   * as a class member function (method syntax), while the implementation is not
+   * done using a class, but a regular function (function syntax), so TypeScript
+   * assumes that the `this` context is **unbound**
+   *
+   * - [`extractCriticalToChunks` implementation](https://github.com/emotion-js/emotion/blob/main/packages/server/src/create-instance/extract-critical-to-chunks.js)
+   *
+   * As a reference see [this](https://stackoverflow.com/a/62864909/14179717) StackOverflow answer
+   */
   const { extractCriticalToChunks } = createEmotionServer(cache);
+
   const loaderData = remixContext.staticHandlerContext.loaderData as {
     root: {
       cspScriptNonce: string | undefined;
     };
   };
-  const nonce = loaderData.root.cspScriptNonce;
 
+  const nonce = loaderData.root?.cspScriptNonce;
 
-  function MuiRemixServer() {
-    return (
-      <CacheProvider value={cache}>
-        <ThemeProvider theme={theme}>
-          {/* CssBaseline kickstart an elegant, consistent, and simple baseline to build upon. */}
-          <CssBaseline />
-          <RemixServer context={remixContext} url={request.url} />
-        </ThemeProvider>
-      </CacheProvider>
-    );
-  }
+  const html = renderToString(
+    <CacheProvider value={cache}>
+      <ThemeProvider theme={{}}>
+        <CssBaseline />
 
-  // Render the component to a string.
-  const html = ReactDOMServer.renderToString(<MuiRemixServer />);
-
-  // Grab the CSS from emotion
-  const { styles } = extractCriticalToChunks(html);
-
-  let stylesHTML = '';
-
-  styles.forEach(({ key, ids, css }) => {
-    const emotionKey = `${key} ${ids.join(' ')}`;
-    const newStyleTag = `<style nonce="${nonce}" data-emotion="${emotionKey}">${css}</style>`;
-    stylesHTML = `${stylesHTML}${newStyleTag}`;
-  });
-
-  // Add the Emotion style tags after the insertion point meta tag
-  const markup = html.replace(
-    /<meta(\s)*name="emotion-insertion-point"(\s)*content="emotion-insertion-point"(\s)*\/>/,
-    `<meta name="emotion-insertion-point" content="emotion-insertion-point"/>${stylesHTML}`,
+        <RemixServer context={remixContext} url={request.url} />
+      </ThemeProvider>
+    </CacheProvider>,
   );
 
-  const { CSPolicy, CSPheaders } = createCSP(nonce);
-  responseHeaders.set(CSPolicy, CSPheaders);
+  const { styles } = extractCriticalToChunks(html);
+
+  const concatenatedEmotionStyleTags = styles.reduce(
+    (styleTags, styleTagMetadata) => {
+      const emotionKey = `${styleTagMetadata.key} ${styleTagMetadata.ids.join(
+        ' ',
+      )}`.trim();
+
+      const newStyleTag = `<style nonce="${nonce}" data-emotion="${emotionKey}">${styleTagMetadata.css}</style>`;
+      styleTags += newStyleTag;
+
+      return styleTags;
+    },
+    '',
+  );
+
+  const markup = html.replace(
+    /<meta(\s)*name="emotion-insertion-point"(\s)*content="emotion-insertion-point"(\s)*\/>/,
+    `<meta name="emotion-insertion-point" content="emotion-insertion-point"/>${concatenatedEmotionStyleTags}`,
+  );
+
+  const CSPheaders = createCSP(nonce);
+
+  responseHeaders.set('Content-Security-Policy', CSPheaders);
   responseHeaders.set('Content-Type', 'text/html');
 
-  return new Response(`<!DOCTYPE html>${markup}`, {
-    status: responseStatusCode,
-    headers: responseHeaders,
-  });
+  return await withCors(
+    request,
+    new Response(`<!DOCTYPE html>${markup}`, {
+      headers: responseHeaders,
+      status: responseStatusCode,
+    }),
+  );
 }
 
-const createCSP = (nonce?: string) => {
-  const isDevelopment = process.env.NODE_ENV === "development";
+const withCors = async (request: Request, response: Response) => {
+  const corsResponse = await cors(request, response, {
+    methods: ['GET', 'POST'],
+    origin: GLOBAL_ENVIRONMENT.ALLOWED_ORIGINS.split(','),
+    allowedHeaders: [
+      'Accept',
+      'Authorization',
+      'Connection',
+      'Content-Type',
+      'Host',
+      'User-Agent',
+    ],
+  });
 
-  // Use type assertions to specify the types of loaderData and cspScriptNonce
+  return corsResponse;
+};
+
+export const createCSP = (nonce?: string) => {
+  const isDevelopment = process.env.NODE_ENV === 'development';
 
   let scriptSrc: string;
-  if (typeof nonce === "string" && nonce.length > 10) {
+
+  if (isDevelopment || typeof nonce === 'string' && nonce.length > 10) {
     scriptSrc = `'report-sample' 'nonce-${nonce}'`;
-  } else if (isDevelopment) {
-    // Allow the <LiveReload /> component to load without a nonce in the error pages
-    scriptSrc = "'report-sample' 'unsafe-inline'";
   } else {
     scriptSrc = "'report-sample'";
   }
 
-  const connectSrc = isDevelopment ? "ws://localhost:*" : "";
-
-  const CSPolicy = isDevelopment
-    ? "Content-Security-Policy"
-    : "Content-Security-Policy";
+  const connectSrc = isDevelopment ? 'ws://localhost:*' : '';
 
   const CSPheaders =
     "default-src 'self'; " +
+    "base-uri 'self'; " +
     `script-src 'self' ${scriptSrc}; ` +
-    `style-src 'self' 'sha256-zRov+xUGJ/uvnA8bUk72Bu/FQ7Uk11WaDIOM4b+hpX0=' ${scriptSrc}; ` +
+    `style-src 'self' ${scriptSrc}; ` +
     "img-src 'self' data: blob:; " +
     `connect-src 'self' ${connectSrc} data:; ` +
     "object-src 'none'; " +
     "worker-src 'self' blob:; " +
     "frame-ancestors 'none'; " +
-    "report-to /reporting/csp";
-  return { CSPolicy, CSPheaders };
+    'report-to /reporting/csp';
+
+  return CSPheaders;
 };

@@ -1,8 +1,6 @@
 .env
-.idea
-*.tsbuildinfo
+.git
 build
 coverage
 node_modules
 public/build
-yarn-error.log

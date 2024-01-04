@@ -32,11 +32,11 @@ export default function Index() {
       <Link to="/about" color="secondary" component={RemixLink}>
         Go to the about page
       </Link>
-      <Tabs value={value} onChange={handleChange} aria-label="basic tabs example">
+      {/* <Tabs value={value} onChange={handleChange} aria-label="basic tabs example">
     <Tab label="Item One" {...a11yProps(0)} />
     <Tab label="Item Two" {...a11yProps(1)} />
     <Tab label="Item Three" {...a11yProps(2)} />
-  </Tabs>
+  </Tabs> */}
   <Button>button</Button>
     </React.Fragment>
   );
